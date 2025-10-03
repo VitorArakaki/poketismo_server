@@ -117,6 +117,18 @@ io.on("connection", (socket) => {
         }
     });
 
+    socket.on("clean-votes", async ({ roomId }) => {
+        try {
+            const votesKey = `room:${roomId}:votes`;
+            await redis.del(votesKey); // Remove todos os votos da sala
+            const roomData = await getRoomData(roomId);
+            io.to(roomId).emit("votes-update", roomData.votes); // Atualiza todos os clientes
+        } catch (error) {
+            console.error("Error cleaning votes:", error);
+            socket.emit("error", "Failed to clean votes");
+        }
+    });
+
     socket.on("disconnect", async () => {
         const { roomId, userName } = socket;
         if (roomId && userName) {
