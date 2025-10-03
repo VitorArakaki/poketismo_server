@@ -105,6 +105,24 @@ async function setRoomShow(roomId, show) {
 }
 
 io.on("connection", (socket) => {
+    socket.on("start-timer", ({ roomId, duration }) => {
+        if (timers[roomId]) clearInterval(timers[roomId].interval);
+
+        const endTime = Date.now() + duration * 1000;
+        timers[roomId] = { endTime };
+
+        timers[roomId].interval = setInterval(() => {
+            const timeLeft = Math.max(0, Math.round((timers[roomId].endTime - Date.now()) / 1000));
+            io.to(roomId).emit("timer-update", { timeLeft });
+            if (timeLeft <= 0) {
+                clearInterval(timers[roomId].interval);
+                delete timers[roomId];
+            }
+        }, 1000);
+
+        io.to(roomId).emit("timer-update", { timeLeft: Math.round((endTime - Date.now()) / 1000) });
+    });
+
     socket.on("join-room", async ({ roomId, userName, vote, show }) => {
         try {
             socket.join(roomId);
@@ -115,6 +133,11 @@ io.on("connection", (socket) => {
             io.to(roomId).emit("users-update", roomData.users);
             io.to(roomId).emit("votes-update", roomData.votes);
             io.to(roomId).emit("votes-show-update", roomData.show);
+
+            if (timers[roomId]) {
+                const timeLeft = Math.max(0, Math.round((timers[roomId].endTime - Date.now()) / 1000));
+                socket.emit("timer-update", { timeLeft });
+            }
         } catch (error) {
             console.error("Error joining room:", error);
             socket.emit("error", "Failed to join room");
