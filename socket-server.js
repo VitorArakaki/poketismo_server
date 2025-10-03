@@ -85,22 +85,36 @@ async function getRoomVotes(roomId) {
     return await redis.hGetAll(key);
 }
 
+async function getRoomShow(roomId) {
+    const key = `room:${roomId}:show`;
+    const show = await redis.get(key);
+    return show === 'true';
+}
+
 async function getRoomData(roomId) {
     const users = await getRoomUsers(roomId);
     const votes = await getRoomVotes(roomId);
-    return { users, votes };
+    const show = await getRoomShow(roomId);
+    return { users, votes, show };
+}
+
+async function setRoomShow(roomId, show) {
+    const showKey = `room:${roomId}:show`;
+    await redis.set(showKey, show.toString());
+    return await getRoomData(roomId);
 }
 
 io.on("connection", (socket) => {
-    socket.on("join-room", async ({ roomId, userName, vote }) => {
+    socket.on("join-room", async ({ roomId, userName, vote, show }) => {
         try {
             socket.join(roomId);
             socket.userName = userName;
             socket.roomId = roomId;
 
-            const roomData = await addUserToRoom(roomId, userName, vote);
+            const roomData = await addUserToRoom(roomId, userName, vote, show);
             io.to(roomId).emit("users-update", roomData.users);
             io.to(roomId).emit("votes-update", roomData.votes);
+            io.to(roomId).emit("votes-show-update", roomData.show);
         } catch (error) {
             console.error("Error joining room:", error);
             socket.emit("error", "Failed to join room");
@@ -114,6 +128,16 @@ io.on("connection", (socket) => {
         } catch (error) {
             console.error("Error updating vote:", error);
             socket.emit("error", "Failed to update vote");
+        }
+    });
+
+    socket.on("vote-show", async ({ roomId, show }) => {
+        try {
+            const roomData = await setRoomShow(roomId, show);
+            io.to(roomId).emit("votes-show-update", roomData.show);
+        } catch (error) {
+            console.error("Error updating show state:", error);
+            socket.emit("error", "Failed to update show state");
         }
     });
 
