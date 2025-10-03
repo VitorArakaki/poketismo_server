@@ -32,6 +32,9 @@ if (process.env.REDIS_URL) {
 
 const redis = createClient(redisConfig);
 
+// Timer storage for rooms
+const timers = {};
+
 // Connect to Redis
 redis.connect().then(() => {
     console.log("Connected to Redis successfully");
@@ -46,7 +49,7 @@ redis.on('error', (err) => {
 });
 
 // Helper functions for Redis operations
-async function addUserToRoom(roomId, userName, vote = null) {
+async function addUserToRoom(roomId, userName, vote = null, show = false) {
     const usersKey = `room:${roomId}:users`;
     await redis.sAdd(usersKey, userName);
 
@@ -55,6 +58,9 @@ async function addUserToRoom(roomId, userName, vote = null) {
         const votesKey = `room:${roomId}:votes`;
         await redis.hSet(votesKey, userName, vote);
     }
+
+    const showKey = `room:${roomId}:show`;
+    await redis.set(showKey, show.toString());
 
     return await getRoomData(roomId);
 }
@@ -183,6 +189,12 @@ io.on("connection", (socket) => {
                 const roomData = await removeUserFromRoom(roomId, userName);
                 io.to(roomId).emit("users-update", roomData.users);
                 io.to(roomId).emit("votes-update", roomData.votes);
+
+                // Se não há mais usuários na sala, limpar timer
+                if (roomData.users.length === 0 && timers[roomId]) {
+                    clearInterval(timers[roomId].interval);
+                    delete timers[roomId];
+                }
             } catch (error) {
                 console.error("Error removing user from room:", error);
             }
@@ -200,6 +212,11 @@ server.listen(PORT, () => {
 process.on('SIGINT', async () => {
     console.log('\nReceived SIGINT. Graceful shutdown...');
     try {
+        // Clear all timers
+        Object.values(timers).forEach(timer => {
+            if (timer.interval) clearInterval(timer.interval);
+        });
+
         await redis.quit();
         console.log('Redis connection closed.');
     } catch (error) {
@@ -211,6 +228,11 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
     console.log('\nReceived SIGTERM. Graceful shutdown...');
     try {
+        // Clear all timers
+        Object.values(timers).forEach(timer => {
+            if (timer.interval) clearInterval(timer.interval);
+        });
+
         await redis.quit();
         console.log('Redis connection closed.');
     } catch (error) {
