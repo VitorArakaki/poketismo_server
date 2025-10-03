@@ -142,24 +142,26 @@ io.on("connection", (socket) => {
     });
 
     socket.on("pause-timer", ({ roomId }) => {
-        if (timers[roomId]) {
-            if (timers[roomId].isPaused) {
-                // Despausar - recalcular endTime baseado no tempo restante
-                timers[roomId].endTime = Date.now() + timers[roomId].remainingTime * 1000;
-                timers[roomId].isPaused = false;
-                io.to(roomId).emit("timer-update", {
-                    timeLeft: timers[roomId].remainingTime,
-                    isPaused: false
-                });
-            } else {
-                // Pausar - salvar tempo restante
-                timers[roomId].remainingTime = Math.max(0, Math.round((timers[roomId].endTime - Date.now()) / 1000));
-                timers[roomId].isPaused = true;
-                io.to(roomId).emit("timer-update", {
-                    timeLeft: timers[roomId].remainingTime,
-                    isPaused: true
-                });
-            }
+        if (timers[roomId] && !timers[roomId].isPaused) {
+            // Pausar - salvar tempo restante
+            timers[roomId].remainingTime = Math.max(0, Math.round((timers[roomId].endTime - Date.now()) / 1000));
+            timers[roomId].isPaused = true;
+            io.to(roomId).emit("timer-update", {
+                timeLeft: timers[roomId].remainingTime,
+                isPaused: true
+            });
+        }
+    });
+
+    socket.on("resume-timer", ({ roomId }) => {
+        if (timers[roomId] && timers[roomId].isPaused) {
+            // Despausar - recalcular endTime baseado no tempo restante
+            timers[roomId].endTime = Date.now() + timers[roomId].remainingTime * 1000;
+            timers[roomId].isPaused = false;
+            io.to(roomId).emit("timer-update", {
+                timeLeft: timers[roomId].remainingTime,
+                isPaused: false
+            });
         }
     });
 
