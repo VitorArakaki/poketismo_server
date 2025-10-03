@@ -115,18 +115,60 @@ io.on("connection", (socket) => {
         if (timers[roomId]) clearInterval(timers[roomId].interval);
 
         const endTime = Date.now() + duration * 1000;
-        timers[roomId] = { endTime };
+        timers[roomId] = {
+            endTime,
+            isPaused: false,
+            remainingTime: duration
+        };
 
         timers[roomId].interval = setInterval(() => {
-            const timeLeft = Math.max(0, Math.round((timers[roomId].endTime - Date.now()) / 1000));
-            io.to(roomId).emit("timer-update", { timeLeft });
-            if (timeLeft <= 0) {
-                clearInterval(timers[roomId].interval);
-                delete timers[roomId];
+            if (timers[roomId] && !timers[roomId].isPaused) {
+                const timeLeft = Math.max(0, Math.round((timers[roomId].endTime - Date.now()) / 1000));
+                timers[roomId].remainingTime = timeLeft;
+                io.to(roomId).emit("timer-update", { timeLeft, isPaused: false });
+
+                if (timeLeft <= 0) {
+                    clearInterval(timers[roomId].interval);
+                    delete timers[roomId];
+                    io.to(roomId).emit("timer-finished");
+                }
             }
         }, 1000);
 
-        io.to(roomId).emit("timer-update", { timeLeft: Math.round((endTime - Date.now()) / 1000) });
+        io.to(roomId).emit("timer-update", {
+            timeLeft: Math.round((endTime - Date.now()) / 1000),
+            isPaused: false
+        });
+    });
+
+    socket.on("pause-timer", ({ roomId }) => {
+        if (timers[roomId]) {
+            if (timers[roomId].isPaused) {
+                // Despausar - recalcular endTime baseado no tempo restante
+                timers[roomId].endTime = Date.now() + timers[roomId].remainingTime * 1000;
+                timers[roomId].isPaused = false;
+                io.to(roomId).emit("timer-update", {
+                    timeLeft: timers[roomId].remainingTime,
+                    isPaused: false
+                });
+            } else {
+                // Pausar - salvar tempo restante
+                timers[roomId].remainingTime = Math.max(0, Math.round((timers[roomId].endTime - Date.now()) / 1000));
+                timers[roomId].isPaused = true;
+                io.to(roomId).emit("timer-update", {
+                    timeLeft: timers[roomId].remainingTime,
+                    isPaused: true
+                });
+            }
+        }
+    });
+
+    socket.on("stop-timer", ({ roomId }) => {
+        if (timers[roomId]) {
+            clearInterval(timers[roomId].interval);
+            delete timers[roomId];
+            io.to(roomId).emit("timer-stopped");
+        }
     });
 
     socket.on("join-room", async ({ roomId, userName, vote, show }) => {
@@ -141,8 +183,13 @@ io.on("connection", (socket) => {
             io.to(roomId).emit("votes-show-update", roomData.show);
 
             if (timers[roomId]) {
-                const timeLeft = Math.max(0, Math.round((timers[roomId].endTime - Date.now()) / 1000));
-                socket.emit("timer-update", { timeLeft });
+                const timeLeft = timers[roomId].isPaused
+                    ? timers[roomId].remainingTime
+                    : Math.max(0, Math.round((timers[roomId].endTime - Date.now()) / 1000));
+                socket.emit("timer-update", {
+                    timeLeft,
+                    isPaused: timers[roomId].isPaused
+                });
             }
         } catch (error) {
             console.error("Error joining room:", error);
